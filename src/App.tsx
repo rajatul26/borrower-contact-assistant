@@ -328,18 +328,24 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
         <Button size="icon" variant="ghost" disabled={folderPage>=folderPages} onClick={()=>setFolderPage(p=>p+1)}><ChevronRight className="h-4 w-4"/></Button>
       </div>
       <div className="grid grid-cols-2 gap-2">
-        {folders.items.map(f => (
-          <Button
-            key={f.id}
-            variant={selectedFolderId===f.id?"default":"outline"}
-            className="w-full !justify-start gap-2 text-left"
-            title={f.name}
-            onClick={()=>{onSelectFolder?.(f); setPage(1);}}
-          >
-            <Folder className="h-4 w-4 flex-shrink-0"/>
-            <span className="truncate flex-1 min-w-0 text-left">{f.name}</span>
-          </Button>
-        ))}
+        {folders.items.map(f => {
+          const isActive = selectedFolderId === f.id;
+          return (
+            <Button
+              key={f.id}
+              variant="outline"
+              className={cn(
+                "w-full !justify-start gap-2 text-left",
+                isActive && "btn-brand text-white border-transparent hover:brightness-105"
+              )}
+              title={f.name}
+              onClick={()=>{onSelectFolder?.(f); setPage(1);}}
+            >
+              <Folder className={cn("h-4 w-4 flex-shrink-0", isActive ? "text-white" : "")}/>
+              <span className="truncate flex-1 min-w-0 text-left">{f.name}</span>
+            </Button>
+          );
+        })}
       </div>
 
       <Separator className="my-2"/>
@@ -356,8 +362,17 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
 
       <ScrollArea className="flex-1 min-h-0">
         <div className="space-y-1 pr-1">
-          {cases.items.map(c => (
-            <div key={c.id} className={cn("group rounded-xl border border-line p-2 hover:bg-slate-50", activeCaseId===c.id && "ring-2 ring-brand")}> 
+          {cases.items.map(c => {
+            const isActive = activeCaseId === c.id;
+            return (
+            <div
+              key={c.id}
+              className={cn(
+                "group rounded-xl border p-2 hover:bg-slate-50 transition",
+                isActive ? "bg-white shadow-sm" : "border-line"
+              )}
+              style={isActive ? { borderColor: "var(--brand-primary)" } : undefined}
+            > 
               <div className="flex items-center justify-between">
                 <button className="text-left flex-1" onClick={()=>onSelectCase(c)}>
                   <div className="text-sm font-medium truncate">{c.title || c.id}</div>
@@ -379,7 +394,7 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
                 </DropdownMenu>
               </div>
             </div>
-          ))}
+          )})}
         </div>
       </ScrollArea>
 
@@ -717,7 +732,7 @@ const DevDiagnostics = ({ open, setOpen }) => {
           {results.length === 0 && <div className="text-sm text-slate-500">Running tests…</div>}
         </div>
         <DialogFooter>
-          <Button onClick={()=>setOpen(false)}>Close</Button>
+          <Button className="btn-brand" onClick={()=>setOpen(false)}>Close</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
