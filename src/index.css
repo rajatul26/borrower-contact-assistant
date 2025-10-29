@@ -1,0 +1,8 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* custom utilities used in the app */
+.border-line { @apply border-slate-200; }
+.text-brand { color: var(--brand-primary); }
+.ring-brand { --tw-ring-color: var(--brand-primary); }
