@@ -484,10 +484,12 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
  ************************************/
 const UploadTray = ({ onUploaded }) => {
   const [queue, setQueue] = useState([]);
+  const [dragActive, setDragActive] = useState(false);
   const inputRef = useRef(null);
 
   const handleFiles = async (files) => {
     const arr = Array.from(files);
+    if (arr.length === 0) return;
     setQueue(arr.map((f, i) => ({ id: i, name: f.name, progress: 0 })));
     const fileMeta = arr.map(file => ({
       file,
@@ -511,6 +513,16 @@ const UploadTray = ({ onUploaded }) => {
           name: doc.name || meta.file?.name || `Document ${idx + 1}`,
           file: meta.file || null,
           url: meta.url || null,
+          status: "processing",
+          currentStep: "Validating file",
+          stepIndex: 0,
+          steps: [
+            "Validating file",
+            "Virus scan",
+            "Reading PDF structure",
+            "Running OCR",
+            "Extracting entities",
+          ],
         };
       });
       onUploaded(enriched);
@@ -527,8 +539,46 @@ const UploadTray = ({ onUploaded }) => {
     }
   };
 
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "copy";
+    if (!dragActive) setDragActive(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.currentTarget.contains(e.relatedTarget)) return;
+    setDragActive(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    const files = Array.from(e.dataTransfer?.files || []).filter(f => {
+      return f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
+    });
+    if (!files.length) {
+      toast.error("Only PDF files can be uploaded.");
+      return;
+    }
+    handleFiles(files);
+  };
+
   return (
-    <div className="rounded-2xl border-2 border-dashed border-line p-6 text-center bg-white">
+    <div
+      className={cn(
+        "rounded-2xl border-2 border-dashed p-6 text-center transition bg-white border-line",
+        dragActive && "shadow-md"
+      )}
+      style={dragActive ? { borderColor: "var(--brand-primary)", backgroundColor: "rgba(43,83,154,0.08)" } : undefined}
+      onDragOver={handleDragOver}
+      onDragEnter={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <div className="flex flex-col items-center gap-2">
         <UploadCloud className="h-8 w-8 text-brand"/>
         <div className="text-sm text-slate-600">Drag & drop mortgage PDFs here, or</div>
@@ -563,6 +613,12 @@ const ChatBubble = ({ who = "bot", text, actions }) => (
 );
 
 const EvidenceTabs = ({ docs=[], web=[], onAddCandidate, onRemoveCandidate = () => {}, selectedNumbers=[] }) => {
+  const statusColors = {
+    pending: "bg-slate-200 text-slate-700",
+    processing: "bg-amber-200 text-amber-800",
+    completed: "bg-emerald-200 text-emerald-800",
+    error: "bg-red-200 text-red-700",
+  };
   const resolveSourceLabel = (domain) => {
     const host = (domain || "").toLowerCase();
     if (host.includes("truepeople")) return "TruePeopleSearch";
@@ -580,18 +636,32 @@ const EvidenceTabs = ({ docs=[], web=[], onAddCandidate, onRemoveCandidate = () 
       </TabsList>
       <TabsContent value="docs" className="space-y-2">
         {docs.length===0 && <div className="text-sm text-slate-500">No documents uploaded yet.</div>}
-        {docs.map(d => (
+        {docs.map(d => {
+          const stepNumber = typeof d.stepIndex === "number" ? d.stepIndex + 1 : 1;
+          const stepLabel = d.currentStep || "Processing…";
+          return (
           <Card key={d.id} className="border-line">
             <CardHeader className="py-3">
-              <CardTitle className="text-sm flex items-center gap-2"><FileText className="h-4 w-4"/> {d.name} <Badge variant="secondary">{d.pages} pages</Badge> <Badge>Scanned</Badge></CardTitle>
+              <CardTitle className="text-sm flex items-center gap-2">
+                <FileText className="h-4 w-4"/> {d.name}
+                {d.pages > 0 && <Badge variant="secondary">{d.pages} pages</Badge>}
+                <span className={cn(
+                  "text-[11px] px-2 py-1 rounded-full capitalize",
+                  statusColors[d.status] || statusColors.pending
+                )}>{d.status}</span>
+              </CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-xs text-slate-500">Preview & hit-highlighting are stubbed in prototype.</div>
+              <div className="text-xs text-slate-500">
+                {d.status === "completed"
+                  ? "Preview & hit-highlighting are stubbed in prototype."
+                  : `Step ${stepNumber}: ${stepLabel}`}
+              </div>
               <div className="flex items-center gap-2">
                 <Button
                   size="sm"
                   variant="ghost"
-                  disabled={!d.url}
+                  disabled={!d.url || d.status !== "completed"}
                   onClick={()=>{ if (d?.url) { window.open(d.url, "_blank", "noopener,noreferrer"); } }}
                 >
                   <Eye className="h-4 w-4 mr-1"/> Preview
@@ -599,7 +669,7 @@ const EvidenceTabs = ({ docs=[], web=[], onAddCandidate, onRemoveCandidate = () 
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={!d.url}
+                  disabled={!d.url || d.status !== "completed"}
                   onClick={()=>{
                     if (!d?.url) return;
                     const link = document.createElement("a");
@@ -615,7 +685,7 @@ const EvidenceTabs = ({ docs=[], web=[], onAddCandidate, onRemoveCandidate = () 
               </div>
             </CardContent>
           </Card>
-        ))}
+        )})}
       </TabsContent>
       <TabsContent value="web" className="space-y-2">
         {web.length===0 && <div className="text-sm text-slate-500">No lookup yet. Ask bot to run a public lookup.</div>}
@@ -868,16 +938,23 @@ const Workspace = ({ user, onOpenDev }) => {
   const welcomeMessage = "Welcome! Upload mortgage PDFs and I’ll extract phone candidates. If none are found, I can run a public lookup.";
   const [activeCase, setActiveCase] = useState(null);
   const [docs, setDocs] = useState([]);
+  const docsRef = useRef([]);
+  const docTimers = useRef(new Map());
+  const releaseDocUrls = useCallback((list) => {
+    list.forEach(doc => {
+      if (doc?.url) {
+        try { URL.revokeObjectURL(doc.url); } catch (_) { /* ignore */ }
+      }
+    });
+  }, []);
   const clearDocs = useCallback(() => {
+    docTimers.current.forEach(timer => clearTimeout(timer));
+    docTimers.current.clear();
     setDocs(prev => {
-      prev.forEach(doc => {
-        if (doc?.url) {
-          try { URL.revokeObjectURL(doc.url); } catch (_) { /* ignore */ }
-        }
-      });
+      releaseDocUrls(prev);
       return [];
     });
-  }, [setDocs]);
+  }, [releaseDocUrls]);
   const [chat, setChat] = useState([ { who: "bot", text: welcomeMessage } ]);
   const [input, setInput] = useState("");
   const [candidates, setCandidates] = useState([]);
@@ -909,9 +986,28 @@ const Workspace = ({ user, onOpenDev }) => {
     }
   };
 
-  const onFilesUploaded = (uploaded) => {
+  const onFilesUploaded = async (uploaded) => {
     setDocs(prev => [...prev, ...uploaded]);
-    setChat(prev => [...prev, { who: "bot", text: `Uploaded ${uploaded.length} document(s). Say ‘extract phone’.` }]);
+    uploaded.forEach(doc => scheduleDocProcessing(doc));
+    if (!activeCase) {
+      setChat(prev => [...prev, { who: "bot", text: `Uploaded ${uploaded.length} document(s). Select or create a case to extract phone numbers.` }]);
+      return;
+    }
+    setChat(prev => [...prev, { who: "bot", text: `Uploaded ${uploaded.length} document(s). Extracting phone candidates…` }]);
+    try {
+      const { candidates: found } = await MockAPI.extractCandidates({ caseId: activeCase.id });
+      setCandidates(prev => {
+        const seen = new Set(prev.map(c => `${c.number}|${c.via}`));
+        const addition = found.filter(c => !seen.has(`${c.number}|${c.via}`));
+        if (!addition.length) return prev;
+        return [...prev, ...addition];
+      });
+      setDrawerOpen(true);
+      setChat(prev => [...prev, { who: "bot", text: `Auto-extracted ${found.length} candidate(s) from the latest upload.` }]);
+    } catch (err) {
+      toast.error("Failed to extract candidates automatically. Try again later.");
+      setChat(prev => [...prev, { who: "bot", text: "Automatic extraction failed. You can retry by typing ‘extract phone’." }]);
+    }
   };
 
   const onSelectPrimary = (c) => {
@@ -984,6 +1080,27 @@ const Workspace = ({ user, onOpenDev }) => {
     toast.success("Case created");
   };
 
+  const scheduleDocProcessing = useCallback((doc) => {
+    if (!doc?.id || !doc?.steps) return;
+    if (docTimers.current.has(doc.id)) {
+      clearTimeout(docTimers.current.get(doc.id));
+    }
+    const durations = [800, 900, 1100, 1000, 900];
+    const runStep = (index) => {
+      const steps = doc.steps || [];
+      if (index >= steps.length) {
+        setDocs(prev => prev.map(d => d.id === doc.id ? { ...d, status: "completed", currentStep: "Ready for extraction", stepIndex: steps.length } : d));
+        docTimers.current.delete(doc.id);
+        return;
+      }
+      const delay = durations[index] || 1000;
+      setDocs(prev => prev.map(d => d.id === doc.id ? { ...d, status: "processing", currentStep: steps[index], stepIndex: index } : d));
+      const timer = window.setTimeout(() => runStep(index + 1), delay);
+      docTimers.current.set(doc.id, timer);
+    };
+    runStep(0);
+  }, [setDocs]);
+
   const addCandidateFromWeb = (candidate) => {
     setCandidates(prev => {
       if (prev.some(p => p.number === candidate.number && p.source?.type === "web")) {
@@ -1043,7 +1160,12 @@ const Workspace = ({ user, onOpenDev }) => {
     return () => window.removeEventListener("popstate", onPop);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  useEffect(() => () => { clearDocs(); }, [clearDocs]);
+  useEffect(() => { docsRef.current = docs; }, [docs]);
+  useEffect(() => () => {
+    docTimers.current.forEach(timer => clearTimeout(timer));
+    docTimers.current.clear();
+    releaseDocUrls(docsRef.current);
+  }, [releaseDocUrls]);
 
   return (
     <div className="flex flex-1 min-h-0 max-h-full w-full overflow-hidden">
