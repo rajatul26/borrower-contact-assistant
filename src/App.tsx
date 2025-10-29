@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useMemo } from "react";
+import React, { useRef, useState, useEffect, useMemo, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +38,7 @@ import {
   Folder,
   Users,
   BookOpen,
+  Eye,
 } from "lucide-react";
 
 /************************************
@@ -274,7 +275,7 @@ const LoginScreen = ({ onLogin }) => {
 /************************************
  * LEFT NAV: Folders & Cases (search + pagination + rename)
  ************************************/
-const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, onSelectFolder }) => {
+const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, onSelectFolder, onUpdateCase }) => {
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [folderPage, setFolderPage] = useState(1);
@@ -292,17 +293,64 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
 
   const pages = Math.max(1, Math.ceil(cases.total/12));
   const folderPages = Math.max(1, Math.ceil(folders.total/6));
+  const [editingCaseId, setEditingCaseId] = useState(null);
+  const [draftCase, setDraftCase] = useState({ title: "", id: "" });
+  useEffect(() => {
+    setEditingCaseId(null);
+    setDraftCase({ title: "", id: "" });
+  }, [selectedFolderId]);
 
-  const renameCase = (id) => {
-    const name = prompt("Rename case title to…");
-    if (!name) return;
-    setCases(prev => ({ ...prev, items: prev.items.map(c => c.id === id ? { ...c, title: name } : c) }));
-    toast.success("Case renamed");
+  const startEditCase = (caseItem) => {
+    setEditingCaseId(caseItem.id);
+    setDraftCase({ title: caseItem.title || "", id: caseItem.id });
+  };
+
+  const cancelEditCase = () => {
+    setEditingCaseId(null);
+    setDraftCase({ title: "", id: "" });
+  };
+
+  const saveCaseEdit = () => {
+    if (!editingCaseId) return;
+    const original = cases.items.find(c => c.id === editingCaseId);
+    if (!original) { cancelEditCase(); return; }
+    const nextId = (draftCase.id || "").trim();
+    if (!nextId) { toast.error("Application number is required."); return; }
+    const nextTitle = (draftCase.title || "").trim() || original.title || nextId;
+    const duplicate = cases.items.some(c => c.id !== editingCaseId && c.id.toLowerCase() === nextId.toLowerCase());
+    if (duplicate) { toast.error("Application number already exists."); return; }
+    const updatedCase = { ...original, id: nextId, title: nextTitle };
+    setCases(prev => ({
+      ...prev,
+      items: prev.items.map(c => c.id === editingCaseId ? updatedCase : c)
+    }));
+    toast.success("Case updated");
+    onUpdateCase?.(updatedCase, editingCaseId);
+    setEditingCaseId(null);
+    setDraftCase({ title: "", id: "" });
+  };
+
+  const handleDraftChange = (field, value) => {
+    setDraftCase(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleDraftKeyDown = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      saveCaseEdit();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      cancelEditCase();
+    }
   };
 
   const deleteCase = (id) => {
+    if (editingCaseId === id) {
+      cancelEditCase();
+    }
     setCases(prev => ({ ...prev, items: prev.items.filter(c => c.id !== id) }));
     toast.message("Case archived");
+    onUpdateCase?.(null, id);
   };
 
   return (
@@ -364,37 +412,65 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
         <div className="space-y-1 pr-1">
           {cases.items.map(c => {
             const isActive = activeCaseId === c.id;
+            const isEditing = editingCaseId === c.id;
             return (
-            <div
-              key={c.id}
-              className={cn(
-                "group rounded-xl border p-2 hover:bg-slate-50 transition",
-                isActive ? "bg-white shadow-sm" : "border-line"
-              )}
-              style={isActive ? { borderColor: "var(--brand-primary)" } : undefined}
-            > 
-              <div className="flex items-center justify-between">
-                <button className="text-left flex-1" onClick={()=>onSelectCase(c)}>
-                  <div className="text-sm font-medium truncate">{c.title || c.id}</div>
-                  <div className="text-[11px] text-slate-500 flex items-center gap-2">
-                    <span>{c.id}</span>
-                    <Badge variant={c.status==="Established"?"default":"secondary"} className="h-5">{c.status}</Badge>
+              <div
+                key={c.id}
+                className={cn(
+                  "group rounded-xl border p-2 hover:bg-slate-50 transition",
+                  isActive ? "bg-white shadow-sm" : "border-line"
+                )}
+                style={isActive ? { borderColor: "var(--brand-primary)" } : undefined}
+              >
+                {isEditing ? (
+                  <div className="space-y-2">
+                    <Input
+                      value={draftCase.title}
+                      onChange={e=>handleDraftChange("title", e.target.value)}
+                      onKeyDown={handleDraftKeyDown}
+                      placeholder="Applicant name"
+                      autoFocus
+                    />
+                    <Input
+                      value={draftCase.id}
+                      onChange={e=>handleDraftChange("id", e.target.value)}
+                      onKeyDown={handleDraftKeyDown}
+                      placeholder="Application #"
+                    />
+                    <div className="flex justify-end gap-2 pt-1">
+                      <Button size="sm" className="btn-brand" onClick={(e)=>{ e.preventDefault(); saveCaseEdit(); }}>Save</Button>
+                      <Button size="sm" variant="ghost" onClick={(e)=>{ e.preventDefault(); cancelEditCase(); }}>Cancel</Button>
+                    </div>
                   </div>
-                </button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100"><MoreVerticalIcon className="h-4 w-4"/></Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuLabel>Case actions</DropdownMenuLabel>
-                    <DropdownMenuItem onClick={()=>renameCase(c.id)}><Pencil className="h-4 w-4 mr-2"/> Rename</DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem className="text-red-600" onClick={()=>deleteCase(c.id)}><Trash2 className="h-4 w-4 mr-2"/> Archive</DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <button className="text-left flex-1" onClick={()=>onSelectCase(c)}>
+                      <div className="text-sm font-medium truncate">{c.title || c.id}</div>
+                      <div className="text-[11px] text-slate-500 flex items-center gap-2">
+                        <span>{c.id}</span>
+                        <Badge variant={c.status==="Established"?"default":"secondary"} className="h-5">{c.status}</Badge>
+                      </div>
+                    </button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100"><MoreVerticalIcon className="h-4 w-4"/></Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>Case actions</DropdownMenuLabel>
+                        <DropdownMenuItem onSelect={(e)=>{ e.preventDefault(); startEditCase(c); }}>
+                          <Pencil className="h-4 w-4"/> Edit details
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="text-red-600" onSelect={(e)=>{ e.preventDefault(); deleteCase(c.id); }}>
+                          <Trash2 className="h-4 w-4"/> Archive
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                )}
               </div>
-            </div>
-          )})}
+            );
+          })}
         </div>
       </ScrollArea>
 
@@ -413,6 +489,10 @@ const UploadTray = ({ onUploaded }) => {
   const handleFiles = async (files) => {
     const arr = Array.from(files);
     setQueue(arr.map((f, i) => ({ id: i, name: f.name, progress: 0 })));
+    const fileMeta = arr.map(file => ({
+      file,
+      url: URL.createObjectURL(file),
+    }));
 
     // simulate progess
     for (let i=0;i<arr.length;i++) {
@@ -422,10 +502,29 @@ const UploadTray = ({ onUploaded }) => {
       }
     }
 
-    const uploaded = await MockAPI.uploadDocs(arr);
-    onUploaded(uploaded);
-    toast.success(`${uploaded.length} document(s) uploaded`);
-    setQueue([]);
+    try {
+      const uploaded = await MockAPI.uploadDocs(arr);
+      const enriched = uploaded.map((doc, idx) => {
+        const meta = fileMeta[idx] || {};
+        return {
+          ...doc,
+          name: doc.name || meta.file?.name || `Document ${idx + 1}`,
+          file: meta.file || null,
+          url: meta.url || null,
+        };
+      });
+      onUploaded(enriched);
+      toast.success(`${uploaded.length} document(s) uploaded`);
+    } catch (err) {
+      fileMeta.forEach(meta => {
+        if (meta?.url) {
+          try { URL.revokeObjectURL(meta.url); } catch (_) { /* ignore */ }
+        }
+      });
+      toast.error("Upload failed. Please try again.");
+    } finally {
+      setQueue([]);
+    }
   };
 
   return (
@@ -486,8 +585,34 @@ const EvidenceTabs = ({ docs=[], web=[], onAddCandidate, onRemoveCandidate = () 
             <CardHeader className="py-3">
               <CardTitle className="text-sm flex items-center gap-2"><FileText className="h-4 w-4"/> {d.name} <Badge variant="secondary">{d.pages} pages</Badge> <Badge>Scanned</Badge></CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-xs text-slate-500">Preview & hit-highlighting are stubbed in prototype.</div>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={!d.url}
+                  onClick={()=>{ if (d?.url) { window.open(d.url, "_blank", "noopener,noreferrer"); } }}
+                >
+                  <Eye className="h-4 w-4 mr-1"/> Preview
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!d.url}
+                  onClick={()=>{
+                    if (!d?.url) return;
+                    const link = document.createElement("a");
+                    link.href = d.url;
+                    link.download = d.name || "document.pdf";
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }}
+                >
+                  <Download className="h-4 w-4 mr-1"/> Download
+                </Button>
+              </div>
             </CardContent>
           </Card>
         ))}
@@ -743,6 +868,16 @@ const Workspace = ({ user, onOpenDev }) => {
   const welcomeMessage = "Welcome! Upload mortgage PDFs and I’ll extract phone candidates. If none are found, I can run a public lookup.";
   const [activeCase, setActiveCase] = useState(null);
   const [docs, setDocs] = useState([]);
+  const clearDocs = useCallback(() => {
+    setDocs(prev => {
+      prev.forEach(doc => {
+        if (doc?.url) {
+          try { URL.revokeObjectURL(doc.url); } catch (_) { /* ignore */ }
+        }
+      });
+      return [];
+    });
+  }, [setDocs]);
   const [chat, setChat] = useState([ { who: "bot", text: welcomeMessage } ]);
   const [input, setInput] = useState("");
   const [candidates, setCandidates] = useState([]);
@@ -802,10 +937,10 @@ const Workspace = ({ user, onOpenDev }) => {
     window.history[method]({}, "", newUrl);
   };
 
-  const setCaseContext = (caseData, { syncUrl = true, replaceHistory = false, folderOverride = undefined } = {}) => {
+  const setCaseContext = (caseData, { syncUrl = true, replaceHistory = false, folderOverride = undefined, preserveData = false } = {}) => {
     if (!caseData) {
       setActiveCase(null);
-      setDocs([]);
+      clearDocs();
       setCandidates([]);
       setWebResults([]);
       setChat([{ who: "bot", text: welcomeMessage }]);
@@ -818,13 +953,17 @@ const Workspace = ({ user, onOpenDev }) => {
     }
     const folderForCase = folderOverride !== undefined ? folderOverride : (caseData.folderId || selectedFolderId || null);
     setSelectedFolderId(folderForCase);
-    setActiveCase(caseData);
-    setDocs([]);
-    setCandidates([]);
-    setWebResults([]);
-    setChat([{ who: "bot", text: `Opened case ${caseData.id}. Upload PDFs to begin.` }]);
-    setDrawerOpen(false);
-    setSidebarCollapsed(false);
+    setActiveCase(prev => (preserveData && prev ? { ...prev, ...caseData } : caseData));
+    if (!preserveData) {
+      clearDocs();
+      setCandidates([]);
+      setWebResults([]);
+      setChat([{ who: "bot", text: `Opened case ${caseData.id}. Upload PDFs to begin.` }]);
+      setDrawerOpen(false);
+    }
+    if (!preserveData) {
+      setSidebarCollapsed(false);
+    }
     if (syncUrl) {
       updateUrlState({ folder: folderForCase, case: caseData.id }, { replace: replaceHistory });
     }
@@ -856,6 +995,20 @@ const Workspace = ({ user, onOpenDev }) => {
 
   const removeCandidateFromWeb = (number) => {
     setCandidates(prev => prev.filter(p => !(p.number === number && p.source?.type === "web")));
+  };
+
+  const handleCaseUpdated = (updatedCase, originalId) => {
+    if (!originalId) return;
+    if (!updatedCase) {
+      if (activeCase?.id === originalId) {
+        setCaseContext(null, { replaceHistory: true });
+      }
+      return;
+    }
+    if (activeCase?.id === originalId) {
+      const folderForCase = updatedCase.folderId || selectedFolderId || null;
+      setCaseContext(updatedCase, { folderOverride: folderForCase, preserveData: true, replaceHistory: true });
+    }
   };
 
   useEffect(() => {
@@ -890,6 +1043,7 @@ const Workspace = ({ user, onOpenDev }) => {
     return () => window.removeEventListener("popstate", onPop);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  useEffect(() => () => { clearDocs(); }, [clearDocs]);
 
   return (
     <div className="flex flex-1 min-h-0 max-h-full w-full overflow-hidden">
@@ -911,6 +1065,7 @@ const Workspace = ({ user, onOpenDev }) => {
             onCreateCase={createCase}
             selectedFolderId={selectedFolderId}
             onSelectFolder={handleSelectFolder}
+            onUpdateCase={handleCaseUpdated}
           />
         </div>
       </div>
