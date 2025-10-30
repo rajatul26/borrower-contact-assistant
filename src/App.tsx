@@ -39,6 +39,7 @@ import {
   Users,
   BookOpen,
   Menu,
+  ChevronDown,
   Calculator,
   Eye,
 } from "lucide-react";
@@ -282,26 +283,29 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
   const [page, setPage] = useState(1);
   const [folderPage, setFolderPage] = useState(1);
   const [folders, setFolders] = useState({ items: [], total: 0 });
+  const [allFolders, setAllFolders] = useState([]);
   const [createdFolders, setCreatedFolders] = useState([]);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [folderDraft, setFolderDraft] = useState("");
+  const [folderPanelOpen, setFolderPanelOpen] = useState(false);
   const [cases, setCases] = useState({ items: [], total: 0 });
 
   const load = async () => {
-    const base = await MockAPI.listFolders({ q, page: 1, pageSize: 100 });
-    const filteredCreated = createdFolders.filter(f => f.name.toLowerCase().includes(q.toLowerCase()));
-    const combined = [
-      ...filteredCreated,
-      ...base.items.filter(f => !filteredCreated.some(cf => cf.id === f.id)),
+    const base = await MockAPI.listFolders({ q: "", page: 1, pageSize: 100 });
+    const fullCombined = [
+      ...createdFolders,
+      ...base.items.filter(f => !createdFolders.some(cf => cf.id === f.id)),
     ];
-    const total = combined.length;
+    setAllFolders(fullCombined);
+    const filtered = fullCombined.filter(f => f.name.toLowerCase().includes(q.toLowerCase()));
+    const total = filtered.length;
     const maxPage = Math.max(1, Math.ceil(total / 6));
     const currentPage = Math.min(folderPage, maxPage);
-    if (currentPage !== folderPage) {c
+    if (currentPage !== folderPage) {
       setFolderPage(currentPage);
     }
     const start = (currentPage - 1) * 6;
-    setFolders({ items: combined.slice(start, start + 6), total });
+    setFolders({ items: filtered.slice(start, start + 6), total });
     const c = await MockAPI.listCases({ folderId: selectedFolderId || null, q, page, pageSize: 12 });
     setCases(c);
   };
@@ -317,6 +321,7 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
     setDraftCase({ title: "", id: "" });
     setCreatingFolder(false);
     setFolderDraft("");
+    setFolderPanelOpen(false);
   }, [selectedFolderId]);
 
   const startEditCase = (caseItem) => {
@@ -350,6 +355,12 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
     onCloseSidebar?.();
     toast.success("Folder created");
   };
+
+  const selectedFolderName = useMemo(() => {
+    if (!selectedFolderId) return "All folders";
+    const match = allFolders.find(f => f.id === selectedFolderId) || createdFolders.find(f => f.id === selectedFolderId);
+    return match?.name || "Selected folder";
+  }, [selectedFolderId, allFolders, createdFolders]);
 
   const startCreateCase = () => {
     setPage(1);
@@ -415,57 +426,103 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
   };
 
   return (
-    <div className="h-full min-h-0 flex flex-col gap-3 p-3 bg-white/70 w-full max-w-full lg:max-w-[360px] overflow-hidden lg:border-r lg:border-line">
-      <div className="flex items-center gap-2">
-        <Input value={q} onChange={e=>{setQ(e.target.value); setPage(1); setFolderPage(1);}} placeholder="Search folders & cases" className="h-9" />
-        <TooltipProvider><Tooltip><TooltipTrigger asChild>
-          <Button variant="outline" size="icon" className="text-slate-600" aria-label="Search">
-            <Search className="h-4 w-4" />
-          </Button>
-        </TooltipTrigger><TooltipContent>Search</TooltipContent></Tooltip></TooltipProvider>
-      </div>
-
-      <div className="flex items-center justify-between mt-1">
-        <div className="flex items-center gap-2 text-xs text-slate-500">
-          <Folder className="h-4 w-4"/> Folders
+    <div className="h-full min-h-0 flex flex-col p-3 bg-white/70 w-full max-w-full lg:max-w-[360px] overflow-hidden lg:border-r lg:border-line">
+      <div className="pb-2 space-y-2">
+        <div className="flex items-center gap-2">
+          <Input value={q} onChange={e=>{setQ(e.target.value); setPage(1); setFolderPage(1);}} placeholder="Search folders & cases" className="h-8 text-sm" />
+          <TooltipProvider><Tooltip><TooltipTrigger asChild>
+            <Button variant="outline" size="icon" className="text-slate-600" aria-label="Search">
+              <Search className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger><TooltipContent>Search</TooltipContent></Tooltip></TooltipProvider>
         </div>
-        <Button size="sm" variant="ghost" onClick={()=>{ setCreatingFolder(true); setFolderDraft(''); setEditingCaseId(null); setDraftCase({ title: "", id: "" }); }}><FolderPlus className="h-4 w-4 mr-1"/> New</Button>
-      </div>
-      <div className="flex items-center justify-between">
-        <Button size="icon" variant="ghost" disabled={folderPage<=1} onClick={()=>setFolderPage(p=>p-1)}><ChevronLeft className="h-4 w-4"/></Button>
-        <span className="text-xs text-slate-500">Page {folderPage} / {folderPages}</span>
-        <Button size="icon" variant="ghost" disabled={folderPage>=folderPages} onClick={()=>setFolderPage(p=>p+1)}><ChevronRight className="h-4 w-4"/></Button>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        {creatingFolder && (
-          <div className="col-span-2 rounded-xl border border-dashed border-line p-3 bg-white">
-            <div className="space-y-2">
-              <Input value={folderDraft} onChange={e=>setFolderDraft(e.target.value)} placeholder="Folder name" autoFocus />
-              <div className="flex justify-end gap-2 pt-1">
-                <Button size="sm" className="btn-brand" onClick={saveFolder}>Create</Button>
-                <Button size="sm" variant="ghost" onClick={cancelFolder}>Cancel</Button>
+
+        <div className="rounded-xl border border-line bg-white/80">
+          <button
+            type="button"
+            className="w-full flex items-center justify-between px-3 py-2"
+            onClick={()=>setFolderPanelOpen(prev => !prev)}
+          >
+            <div className="flex items-center gap-2 text-sm font-medium text-slate-700 truncate">
+              <Folder className="h-4 w-4" />
+              <span className="truncate">{selectedFolderName}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="text-slate-500"
+                      onClick={(e)=>{
+                        e.stopPropagation();
+                        setFolderPanelOpen(true);
+                        setCreatingFolder(true);
+                        setFolderDraft("");
+                        setEditingCaseId(null);
+                        setDraftCase({ title: "", id: "" });
+                      }}
+                      aria-label="New folder"
+                    >
+                      <FolderPlus className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>New folder</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <ChevronDown className={cn("h-4 w-4 text-slate-500 transition-transform", folderPanelOpen && "rotate-180")} />
+            </div>
+          </button>
+          {folderPanelOpen && (
+            <div className="px-3 pb-3 pt-2 space-y-3 border-t border-line/60">
+              {creatingFolder && (
+                <div className="rounded-xl border border-dashed border-line p-3 bg-white">
+                  <div className="space-y-2">
+                    <Input value={folderDraft} onChange={e=>setFolderDraft(e.target.value)} placeholder="Folder name" autoFocus />
+                    <div className="flex justify-end gap-2 pt-1">
+                      <Button size="sm" className="btn-brand" onClick={saveFolder}>Create</Button>
+                      <Button size="sm" variant="ghost" onClick={cancelFolder}>Cancel</Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span>Folders</span>
+                <div className="flex items-center gap-1">
+                  <Button size="icon" variant="ghost" className="h-7 w-7" disabled={folderPage<=1} onClick={()=>setFolderPage(p=>p-1)}>
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </Button>
+                  <span>Page {folderPage} / {folderPages}</span>
+                  <Button size="icon" variant="ghost" className="h-7 w-7" disabled={folderPage>=folderPages} onClick={()=>setFolderPage(p=>p+1)}>
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {folders.items.map(f => {
+                  const isActive = selectedFolderId === f.id;
+                  return (
+                    <Button
+                      key={f.id}
+                      variant="outline"
+                      className={cn(
+                        "w-full !justify-start gap-2 text-left",
+                        isActive && "btn-brand text-white border-transparent hover:brightness-105"
+                      )}
+                      title={f.name}
+                      onClick={()=>{onSelectFolder?.(f); setPage(1); setCreatingFolder(false); setFolderDraft('');}}
+                    >
+                      <Folder className={cn("h-4 w-4 flex-shrink-0", isActive ? "text-white" : "")}/>
+                      <span className="truncate flex-1 min-w-0 text-left">{f.name}</span>
+                    </Button>
+                  );
+                })}
               </div>
             </div>
-          </div>
-        )}
-        {folders.items.map(f => {
-          const isActive = selectedFolderId === f.id;
-          return (
-            <Button
-              key={f.id}
-              variant="outline"
-              className={cn(
-                "w-full !justify-start gap-2 text-left",
-                isActive && "btn-brand text-white border-transparent hover:brightness-105"
-              )}
-              title={f.name}
-              onClick={()=>{onSelectFolder?.(f); setPage(1); setCreatingFolder(false); setFolderDraft('');}}
-            >
-              <Folder className={cn("h-4 w-4 flex-shrink-0", isActive ? "text-white" : "")}/>
-              <span className="truncate flex-1 min-w-0 text-left">{f.name}</span>
-            </Button>
-          );
-        })}
+          )}
+        </div>
       </div>
 
       <Separator className="my-2"/>
