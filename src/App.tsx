@@ -39,6 +39,7 @@ import {
   Users,
   BookOpen,
   Menu,
+  Calculator,
   Eye,
 } from "lucide-react";
 
@@ -296,7 +297,7 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
     const total = combined.length;
     const maxPage = Math.max(1, Math.ceil(total / 6));
     const currentPage = Math.min(folderPage, maxPage);
-    if (currentPage !== folderPage) {
+    if (currentPage !== folderPage) {c
       setFolderPage(currentPage);
     }
     const start = (currentPage - 1) * 6;
@@ -1377,13 +1378,54 @@ const Workspace = ({ user, onOpenDev }) => {
             <span className="font-medium">{activeCase ? activeCase.title : "No case selected"}</span>
             {activeCase && <Badge variant="secondary">{activeCase.id}</Badge>}
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button size="sm" variant="outline" className="w-full sm:w-auto" onClick={()=>setDrawerOpen(true)}><Phone className="h-4 w-4 mr-2"/> Candidates</Button>
-            <Button size="sm" className="btn-brand w-full sm:w-auto" onClick={()=>extractCandidatesForActiveCase("manual")}>
-              <Wand2 className="h-4 w-4 mr-2"/> Extract
-            </Button>
-            <Button size="sm" variant="ghost" className="w-full sm:w-auto" onClick={onOpenDev}>Dev tests</Button>
-          </div>
+          <TooltipProvider>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-10 h-10 sm:h-9 sm:w-auto sm:px-3 flex items-center justify-center gap-2"
+                    onClick={()=>setDrawerOpen(true)}
+                    aria-label="Candidates"
+                  >
+                    <Phone className="h-4 w-4" />
+                    <span className="hidden sm:inline">Candidates</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Phone candidates</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="sm"
+                    className="btn-brand w-10 h-10 sm:h-9 sm:w-auto sm:px-4 flex items-center justify-center gap-2"
+                    onClick={()=>extractCandidatesForActiveCase("manual")}
+                    aria-label="Extract"
+                  >
+                    <Wand2 className="h-4 w-4" />
+                    <span className="hidden sm:inline">Extract</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Extract phone numbers</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="w-10 h-10 sm:h-9 sm:w-auto sm:px-3 flex items-center justify-center gap-2"
+                    onClick={onOpenDev}
+                    aria-label="Dev tests"
+                  >
+                    <Calculator className="h-4 w-4" />
+                    <span className="hidden sm:inline">Dev tests</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Developer diagnostics</TooltipContent>
+              </Tooltip>
+            </div>
+          </TooltipProvider>
         </div>
 
         {/* Body */}
