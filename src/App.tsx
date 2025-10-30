@@ -854,7 +854,7 @@ const HeaderBar = ({ user, onLogout, caseMeta, onOpenDev }) => (
   <div className="h-14 border-b border-line bg-white/70 px-4 flex items-center justify-between">
     <div className="flex items-center gap-3">
       <span className="text-lg font-semibold">{CONFIG.appName}</span>
-      <Badge variant="secondary" className="hidden md:inline-flex">White‑label</Badge>
+      <Badge variant="secondary" className="hidden md:inline-flex">Skip Trace Bot</Badge>
       <PrivacyBadge />
       <Button size="sm" variant="ghost" onClick={onOpenDev} title="Open diagnostics">DEV</Button>
     </div>
