@@ -314,6 +314,8 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
   useEffect(() => {
     setEditingCaseId(null);
     setDraftCase({ title: "", id: "" });
+    setCreatingFolder(false);
+    setFolderDraft("");
   }, [selectedFolderId]);
 
   const startEditCase = (caseItem) => {
@@ -345,6 +347,7 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
     setPage(1);
     onSelectFolder?.(newFolder);
     onCloseSidebar?.();
+    toast.success("Folder created");
   };
 
   const startCreateCase = () => {
@@ -413,7 +416,7 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
   return (
     <div className="h-full min-h-0 flex flex-col gap-3 p-3 bg-white/70 w-full max-w-full lg:max-w-[360px] overflow-hidden lg:border-r lg:border-line">
       <div className="flex items-center gap-2">
-        <Input value={q} onChange={e=>{setQ(e.target.value); setPage(1);}} placeholder="Search folders & cases" className="h-9" />
+        <Input value={q} onChange={e=>{setQ(e.target.value); setPage(1); setFolderPage(1);}} placeholder="Search folders & cases" className="h-9" />
         <TooltipProvider><Tooltip><TooltipTrigger asChild>
           <Button variant="outline" size="icon" className="text-slate-600" aria-label="Search">
             <Search className="h-4 w-4" />
@@ -425,7 +428,7 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
         <div className="flex items-center gap-2 text-xs text-slate-500">
           <Folder className="h-4 w-4"/> Folders
         </div>
-        <Button size="sm" variant="ghost" onClick={()=>{ setCreatingFolder(true); setFolderDraft(''); }}><FolderPlus className="h-4 w-4 mr-1"/> New</Button>
+        <Button size="sm" variant="ghost" onClick={()=>{ setCreatingFolder(true); setFolderDraft(''); setEditingCaseId(null); setDraftCase({ title: "", id: "" }); }}><FolderPlus className="h-4 w-4 mr-1"/> New</Button>
       </div>
       <div className="flex items-center justify-between">
         <Button size="icon" variant="ghost" disabled={folderPage<=1} onClick={()=>setFolderPage(p=>p-1)}><ChevronLeft className="h-4 w-4"/></Button>
@@ -455,7 +458,7 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
                 isActive && "btn-brand text-white border-transparent hover:brightness-105"
               )}
               title={f.name}
-              onClick={()=>{onSelectFolder?.(f); setPage(1);}}
+              onClick={()=>{onSelectFolder?.(f); setPage(1); setCreatingFolder(false); setFolderDraft('');}}
             >
               <Folder className={cn("h-4 w-4 flex-shrink-0", isActive ? "text-white" : "")}/>
               <span className="truncate flex-1 min-w-0 text-left">{f.name}</span>
@@ -1223,7 +1226,6 @@ const Workspace = ({ user, onOpenDev }) => {
     const folderId = draft.folderId ?? selectedFolderId ?? null;
     const c = { ...draft, folderId, status: draft.status || "Open" };
     setCaseContext(c);
-    toast.success("Case created");
   };
 
   const scheduleDocProcessing = useCallback((doc, onComplete) => {
