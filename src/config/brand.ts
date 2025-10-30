@@ -16,7 +16,7 @@ export const DEFAULT_CONFIG = {
   privacy: {
     dataAtRest: 'AES-256',
     dataInTransit: 'TLS 1.3',
-    certifications: ['SOC 2 (WIP for proto)', 'ISO 27001 (future)'],
+    certifications: ['SOC 2', 'ISO 27001'],
   },
 };
 
