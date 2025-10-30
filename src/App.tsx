@@ -946,6 +946,9 @@ const Workspace = ({ user, onOpenDev }) => {
   const [docs, setDocs] = useState([]);
   const docsRef = useRef([]);
   const docTimers = useRef(new Map());
+  const pendingExtractionDocsRef = useRef(new Set());
+  const autoExtractingRef = useRef(false);
+  const autoExtractionQueuedRef = useRef(false);
   const releaseDocUrls = useCallback((list) => {
     list.forEach(doc => {
       if (doc?.url) {
@@ -956,6 +959,9 @@ const Workspace = ({ user, onOpenDev }) => {
   const clearDocs = useCallback(() => {
     docTimers.current.forEach(timer => clearTimeout(timer));
     docTimers.current.clear();
+    pendingExtractionDocsRef.current.clear();
+    autoExtractionQueuedRef.current = false;
+    autoExtractingRef.current = false;
     setDocs(prev => {
       releaseDocUrls(prev);
       return [];
@@ -970,6 +976,59 @@ const Workspace = ({ user, onOpenDev }) => {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState(null);
 
+  const extractCandidatesForActiveCase = useCallback(async (context = "manual") => {
+    if (!activeCase) return;
+    if (autoExtractingRef.current) {
+      if (context === "auto") {
+        autoExtractionQueuedRef.current = true;
+      }
+      return;
+    }
+    autoExtractingRef.current = true;
+    const introMessage = context === "auto"
+      ? "Processing complete. Extracting phone candidates automatically…"
+      : "Extracting phone candidates from uploaded documents…";
+    setChat(prev => [...prev, { who: "bot", text: introMessage }]);
+    try {
+      const { candidates: found } = await MockAPI.extractCandidates({ caseId: activeCase.id });
+      let newOnes = [];
+      setCandidates(prev => {
+        const seen = new Set(prev.map(p => `${p.number}|${p.via}`));
+        const addition = found.filter(c => {
+          const key = `${c.number}|${c.via}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        newOnes = addition;
+        if (!addition.length) return prev;
+        return [...prev, ...addition];
+      });
+      if (newOnes.length > 0) {
+        setDrawerOpen(true);
+        setChat(prev => [
+          ...prev,
+          {
+            who: "bot",
+            text: context === "auto"
+              ? `Auto-extracted ${newOnes.length} candidate(s). Opened the list.`
+              : `Found ${newOnes.length} candidate(s). Opened the list.`,
+          },
+        ]);
+      } else {
+        setChat(prev => [...prev, { who: "bot", text: "No new candidates found in the latest extraction." }]);
+      }
+    } catch (_) {
+      toast.error("Failed to extract phone candidates.");
+    } finally {
+      autoExtractingRef.current = false;
+      if (autoExtractionQueuedRef.current) {
+        autoExtractionQueuedRef.current = false;
+        setTimeout(() => extractCandidatesForActiveCase("auto"), 0);
+      }
+    }
+  }, [activeCase, setCandidates, setChat, setDrawerOpen]);
+
   const send = async () => {
     if (!input.trim()) return;
     const msg = input.trim();
@@ -983,38 +1042,28 @@ const Workspace = ({ user, onOpenDev }) => {
       setChat(prev => [...prev, { who: "bot", text: `I found ${results.length} public entries. You can add numbers as candidates from the Web tab.` }]);
     } else if (/extract|phone|candidate/i.test(msg)) {
       if (!activeCase) { setChat(prev => [...prev, { who: "bot", text: "Please select or create a case first." }]); return; }
-      setChat(prev => [...prev, { who: "bot", text: "Extracting phone candidates from uploaded documents…" }]);
-      const { candidates: found } = await MockAPI.extractCandidates({ caseId: activeCase.id });
-      setCandidates(prev => [...prev, ...found]);
-      setDrawerOpen(true);
-      setChat(prev => [...prev, { who: "bot", text: `Found ${found.length} candidate(s). Opened the list.` }]);
+      await extractCandidatesForActiveCase("chat");
     } else {
       setChat(prev => [...prev, { who: "bot", text: "Try: ‘extract phone’, or ‘run web lookup’." }]);
     }
   };
 
-  const onFilesUploaded = async (uploaded) => {
+  const onFilesUploaded = (uploaded) => {
     setDocs(prev => [...prev, ...uploaded]);
-    uploaded.forEach(doc => scheduleDocProcessing(doc));
+    uploaded.forEach(doc => {
+      pendingExtractionDocsRef.current.add(doc.id);
+      scheduleDocProcessing(doc, () => {
+        pendingExtractionDocsRef.current.delete(doc.id);
+        if (pendingExtractionDocsRef.current.size === 0 && activeCase) {
+          extractCandidatesForActiveCase("auto");
+        }
+      });
+    });
     if (!activeCase) {
       setChat(prev => [...prev, { who: "bot", text: `Uploaded ${uploaded.length} document(s). Select or create a case to extract phone numbers.` }]);
       return;
     }
-    setChat(prev => [...prev, { who: "bot", text: `Uploaded ${uploaded.length} document(s). Extracting phone candidates…` }]);
-    try {
-      const { candidates: found } = await MockAPI.extractCandidates({ caseId: activeCase.id });
-      setCandidates(prev => {
-        const seen = new Set(prev.map(c => `${c.number}|${c.via}`));
-        const addition = found.filter(c => !seen.has(`${c.number}|${c.via}`));
-        if (!addition.length) return prev;
-        return [...prev, ...addition];
-      });
-      setDrawerOpen(true);
-      setChat(prev => [...prev, { who: "bot", text: `Auto-extracted ${found.length} candidate(s) from the latest upload.` }]);
-    } catch (err) {
-      toast.error("Failed to extract candidates automatically. Try again later.");
-      setChat(prev => [...prev, { who: "bot", text: "Automatic extraction failed. You can retry by typing ‘extract phone’." }]);
-    }
+    setChat(prev => [...prev, { who: "bot", text: `Uploaded ${uploaded.length} document(s). I’ll extract phone candidates once processing completes.` }]);
   };
 
   const onSelectPrimary = (c) => {
@@ -1087,17 +1136,18 @@ const Workspace = ({ user, onOpenDev }) => {
     toast.success("Case created");
   };
 
-  const scheduleDocProcessing = useCallback((doc) => {
+  const scheduleDocProcessing = useCallback((doc, onComplete) => {
     if (!doc?.id || !doc?.steps) return;
     if (docTimers.current.has(doc.id)) {
       clearTimeout(docTimers.current.get(doc.id));
     }
-    const durations = [800, 900, 1100, 1000, 900];
+    const durations = [2000, 2200, 2500, 2300, 2200];
     const runStep = (index) => {
       const steps = doc.steps || [];
       if (index >= steps.length) {
         setDocs(prev => prev.map(d => d.id === doc.id ? { ...d, status: "completed", currentStep: "Ready for extraction", stepIndex: steps.length } : d));
         docTimers.current.delete(doc.id);
+        onComplete?.();
         return;
       }
       const delay = durations[index] || 1000;
@@ -1171,6 +1221,9 @@ const Workspace = ({ user, onOpenDev }) => {
   useEffect(() => () => {
     docTimers.current.forEach(timer => clearTimeout(timer));
     docTimers.current.clear();
+    pendingExtractionDocsRef.current.clear();
+    autoExtractionQueuedRef.current = false;
+    autoExtractingRef.current = false;
     releaseDocUrls(docsRef.current);
   }, [releaseDocUrls]);
 
@@ -1234,7 +1287,7 @@ const Workspace = ({ user, onOpenDev }) => {
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Button size="sm" variant="outline" className="w-full sm:w-auto" onClick={()=>setDrawerOpen(true)}><Phone className="h-4 w-4 mr-2"/> Candidates</Button>
-            <Button size="sm" className="btn-brand w-full sm:w-auto" onClick={()=>setChat(prev=>[...prev,{ who:"bot", text:"Extracting phone candidates from uploaded documents…" }]) && MockAPI.extractCandidates({caseId:activeCase?.id}).then(({candidates:found})=>{ setCandidates(prev=>[...prev,...found]); setDrawerOpen(true); setChat(prev=>[...prev,{ who:"bot", text:`Found ${found.length} candidate(s). Opened the list.` }]); })}>
+            <Button size="sm" className="btn-brand w-full sm:w-auto" onClick={()=>extractCandidatesForActiveCase("manual")}>
               <Wand2 className="h-4 w-4 mr-2"/> Extract
             </Button>
             <Button size="sm" variant="ghost" className="w-full sm:w-auto" onClick={onOpenDev}>Dev tests</Button>
