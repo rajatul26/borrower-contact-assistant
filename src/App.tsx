@@ -38,6 +38,7 @@ import {
   Folder,
   Users,
   BookOpen,
+  Menu,
   Eye,
 } from "lucide-react";
 
@@ -275,7 +276,7 @@ const LoginScreen = ({ onLogin }) => {
 /************************************
  * LEFT NAV: Folders & Cases (search + pagination + rename)
  ************************************/
-const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, onSelectFolder, onUpdateCase }) => {
+const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, onSelectFolder, onUpdateCase, onCloseSidebar }) => {
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [folderPage, setFolderPage] = useState(1);
@@ -354,7 +355,7 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
   };
 
   return (
-    <div className="h-full min-h-0 flex flex-col gap-3 p-3 border-r border-line bg-white/70 w-full max-w-[360px] overflow-hidden">
+    <div className="h-full min-h-0 flex flex-col gap-3 p-3 bg-white/70 w-full max-w-full lg:max-w-[360px] overflow-hidden lg:border-r lg:border-line">
       <div className="flex items-center gap-2">
         <Input value={q} onChange={e=>{setQ(e.target.value); setPage(1);}} placeholder="Search folders & cases" className="h-9" />
         <TooltipProvider><Tooltip><TooltipTrigger asChild>
@@ -400,7 +401,7 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
 
       <div className="flex items-center justify-between">
         <div className="text-xs text-slate-500 flex items-center gap-2"><BookOpen className="h-4 w-4"/> Cases</div>
-        <Button size="sm" className="btn-brand" onClick={onCreateCase}><PlusIcon className="h-4 w-4 mr-1"/> New</Button>
+        <Button size="sm" className="btn-brand" onClick={()=>{ onCreateCase(); onCloseSidebar?.(); }}><PlusIcon className="h-4 w-4 mr-1"/> New</Button>
       </div>
       <div className="flex items-center justify-between mt-1">
         <Button size="icon" variant="ghost" disabled={page<=1} onClick={()=>setPage(p=>p-1)}><ChevronLeft className="h-4 w-4"/></Button>
@@ -444,7 +445,7 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
                   </div>
                 ) : (
                   <div className="flex items-center justify-between">
-                    <button className="text-left flex-1" onClick={()=>onSelectCase(c)}>
+                    <button className="text-left flex-1" onClick={()=>{ onSelectCase(c); onCloseSidebar?.(); }}>
                       <div className="text-sm font-medium truncate">{c.title || c.id}</div>
                       <div className="text-[11px] text-slate-500 flex items-center gap-2">
                         <span>{c.id}</span>
@@ -963,6 +964,7 @@ const Workspace = ({ user, onOpenDev }) => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [webResults, setWebResults] = useState([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState(null);
 
   const send = async () => {
@@ -1173,7 +1175,7 @@ const Workspace = ({ user, onOpenDev }) => {
     <div className="flex flex-1 min-h-0 max-h-full w-full overflow-hidden">
       <div
         className={cn(
-          "relative h-full transition-[width] duration-300 ease-in-out overflow-hidden",
+          "relative hidden lg:block h-full transition-[width] duration-300 ease-in-out overflow-hidden",
           sidebarCollapsed ? "w-0 min-w-0" : "w-[360px] min-w-[280px]"
         )}
       >
@@ -1197,50 +1199,61 @@ const Workspace = ({ user, onOpenDev }) => {
         {/* Case header */}
         <div className="px-4 py-3 border-b border-line bg-white/80 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="text-slate-500"
-                    aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-                    onClick={()=>setSidebarCollapsed(prev => !prev)}
-                  >
-                    {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{sidebarCollapsed ? "Show folders" : "Hide folders"}</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-slate-500 lg:hidden"
+              aria-label="Open navigation"
+              onClick={()=>setMobileSidebarOpen(true)}
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+            <div className="hidden lg:block">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-slate-500"
+                      aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                      onClick={()=>setSidebarCollapsed(prev => !prev)}
+                    >
+                      {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{sidebarCollapsed ? "Show folders" : "Hide folders"}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
             <span className="font-medium">{activeCase ? activeCase.title : "No case selected"}</span>
             {activeCase && <Badge variant="secondary">{activeCase.id}</Badge>}
           </div>
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={()=>setDrawerOpen(true)}><Phone className="h-4 w-4 mr-2"/> Candidates</Button>
-            <Button size="sm" className="btn-brand" onClick={()=>setChat(prev=>[...prev,{ who:"bot", text:"Extracting phone candidates from uploaded documents…" }]) && MockAPI.extractCandidates({caseId:activeCase?.id}).then(({candidates:found})=>{ setCandidates(prev=>[...prev,...found]); setDrawerOpen(true); setChat(prev=>[...prev,{ who:"bot", text:`Found ${found.length} candidate(s). Opened the list.` }]); })}>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button size="sm" variant="outline" className="w-full sm:w-auto" onClick={()=>setDrawerOpen(true)}><Phone className="h-4 w-4 mr-2"/> Candidates</Button>
+            <Button size="sm" className="btn-brand w-full sm:w-auto" onClick={()=>setChat(prev=>[...prev,{ who:"bot", text:"Extracting phone candidates from uploaded documents…" }]) && MockAPI.extractCandidates({caseId:activeCase?.id}).then(({candidates:found})=>{ setCandidates(prev=>[...prev,...found]); setDrawerOpen(true); setChat(prev=>[...prev,{ who:"bot", text:`Found ${found.length} candidate(s). Opened the list.` }]); })}>
               <Wand2 className="h-4 w-4 mr-2"/> Extract
             </Button>
-            <Button size="sm" variant="ghost" onClick={onOpenDev}>Dev tests</Button>
+            <Button size="sm" variant="ghost" className="w-full sm:w-auto" onClick={onOpenDev}>Dev tests</Button>
           </div>
         </div>
 
         {/* Body */}
-        <div className="grid flex-1 min-h-0 grid-cols-2 gap-4 p-4 overflow-hidden">
-          <div className="flex flex-col min-h-0">
+        <div className="flex-1 min-h-0 p-4 space-y-4 overflow-auto lg:overflow-hidden lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-4">
+          <div className="flex flex-col min-h-0 space-y-4">
             <div className="flex-1 rounded-2xl border border-line bg-slate-50 p-4 overflow-auto">
               <div className="space-y-3">
                 {chat.map((m, i) => <ChatBubble key={i} who={m.who} text={m.text} />)}
               </div>
             </div>
-            <div className="mt-3 flex items-center gap-2">
-              <Input placeholder="Type a message… (e.g., ‘extract phone’, ‘run web lookup’)" value={input} onChange={e=>setInput(e.target.value)} onKeyDown={(e)=>{ if(e.key==='Enter') send(); }} />
-              <Button className="btn-brand" onClick={send}>Send</Button>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Input className="w-full" placeholder="Type a message… (e.g., ‘extract phone’, ‘run web lookup’)" value={input} onChange={e=>setInput(e.target.value)} onKeyDown={(e)=>{ if(e.key==='Enter') send(); }} />
+              <Button className="btn-brand w-full sm:w-auto" onClick={send}>Send</Button>
             </div>
           </div>
-          <div className="flex flex-col min-h-0">
+          <div className="flex flex-col min-h-0 space-y-4">
             <UploadTray onUploaded={onFilesUploaded} />
-            <div className="mt-4 flex-1 rounded-2xl border border-line bg-white p-4 overflow-auto">
+            <div className="flex-1 rounded-2xl border border-line bg-white p-4 overflow-auto">
               <EvidenceTabs
                 docs={docs}
                 web={webResults}
@@ -1261,6 +1274,28 @@ const Workspace = ({ user, onOpenDev }) => {
           </div>
           <div className="flex items-center gap-2"><Globe className="h-3.5 w-3.5"/> v0.1 Prototype</div>
         </footer>
+      </div>
+
+      <div className="lg:hidden">
+        <Drawer open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
+          <DrawerContent className="p-0">
+            <DrawerHeader className="px-4 pt-4 pb-2">
+              <DrawerTitle>Navigation</DrawerTitle>
+              <DrawerDescription>Select folders & cases to manage borrowers.</DrawerDescription>
+            </DrawerHeader>
+            <div className="px-4 pb-6 overflow-y-auto max-h-[70vh]">
+              <Sidebar
+                onSelectCase={(c)=>{ setCaseContext(c, { folderOverride: c.folderId || selectedFolderId || null }); }}
+                activeCaseId={activeCase?.id}
+                onCreateCase={createCase}
+                selectedFolderId={selectedFolderId}
+                onSelectFolder={handleSelectFolder}
+                onUpdateCase={handleCaseUpdated}
+                onCloseSidebar={()=>setMobileSidebarOpen(false)}
+              />
+            </div>
+          </DrawerContent>
+        </Drawer>
       </div>
 
       <CandidateDrawer open={drawerOpen} setOpen={setDrawerOpen} candidates={candidates} onSelectPrimary={onSelectPrimary} />
