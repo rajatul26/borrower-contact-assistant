@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -838,9 +838,9 @@ const PrivacyBadge = () => (
         <p>Note: This is a front-end prototype. OCR/LLM/Lookups are mocked. Integrate your services later.</p>
       </div>
       <DialogFooter>
-        <DialogTrigger asChild>
-          <Button className="btn-brand">Close</Button>
-        </DialogTrigger>
+        <DialogClose asChild>
+          <Button variant="ghost" className="btn-brand text-white hover:bg-transparent hover:brightness-110">Close</Button>
+        </DialogClose>
       </DialogFooter>
     </DialogContent>
   </Dialog>
