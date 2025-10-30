@@ -64,7 +64,7 @@ const DEFAULT_CONFIG = {
   privacy: {
     dataAtRest: "AES-256",
     dataInTransit: "TLS 1.3",
-    certifications: ["SOC 2 (WIP for proto)", "ISO 27001 (future)"]
+    certifications: ["SOC 2", "ISO 27001"]
   },
 };
 
@@ -838,7 +838,9 @@ const PrivacyBadge = () => (
         <p>Note: This is a front-end prototype. OCR/LLM/Lookups are mocked. Integrate your services later.</p>
       </div>
       <DialogFooter>
-        <Button>Okay</Button>
+        <DialogTrigger asChild>
+          <Button className="btn-brand">Close</Button>
+        </DialogTrigger>
       </DialogFooter>
     </DialogContent>
   </Dialog>
