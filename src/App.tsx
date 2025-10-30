@@ -281,15 +281,30 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
   const [page, setPage] = useState(1);
   const [folderPage, setFolderPage] = useState(1);
   const [folders, setFolders] = useState({ items: [], total: 0 });
+  const [createdFolders, setCreatedFolders] = useState([]);
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [folderDraft, setFolderDraft] = useState("");
   const [cases, setCases] = useState({ items: [], total: 0 });
 
   const load = async () => {
-    const f = await MockAPI.listFolders({ q, page: folderPage, pageSize: 6 });
-    setFolders(f);
+    const base = await MockAPI.listFolders({ q, page: 1, pageSize: 100 });
+    const filteredCreated = createdFolders.filter(f => f.name.toLowerCase().includes(q.toLowerCase()));
+    const combined = [
+      ...filteredCreated,
+      ...base.items.filter(f => !filteredCreated.some(cf => cf.id === f.id)),
+    ];
+    const total = combined.length;
+    const maxPage = Math.max(1, Math.ceil(total / 6));
+    const currentPage = Math.min(folderPage, maxPage);
+    if (currentPage !== folderPage) {
+      setFolderPage(currentPage);
+    }
+    const start = (currentPage - 1) * 6;
+    setFolders({ items: combined.slice(start, start + 6), total });
     const c = await MockAPI.listCases({ folderId: selectedFolderId || null, q, page, pageSize: 12 });
     setCases(c);
   };
-  useEffect(() => { load(); }, [q, page, folderPage, selectedFolderId]);
+  useEffect(() => { load(); }, [q, page, folderPage, selectedFolderId, createdFolders]);
   useEffect(() => { setPage(1); }, [selectedFolderId]);
 
   const pages = Math.max(1, Math.ceil(cases.total/12));
@@ -311,15 +326,56 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
     setDraftCase({ title: "", id: "" });
   };
 
+  const cancelFolder = () => {
+    setCreatingFolder(false);
+    setFolderDraft("");
+  };
+
+  const saveFolder = () => {
+    const name = folderDraft.trim();
+    if (!name) {
+      toast.error("Folder name is required.");
+      return;
+    }
+    const newFolder = { id: `cf-${Date.now()}`, name };
+    setCreatedFolders(prev => [newFolder, ...prev.filter(f => f.id !== newFolder.id)]);
+    setCreatingFolder(false);
+    setFolderDraft("");
+    setFolderPage(1);
+    setPage(1);
+    onSelectFolder?.(newFolder);
+    onCloseSidebar?.();
+  };
+
+  const startCreateCase = () => {
+    setPage(1);
+    setEditingCaseId("NEW");
+    setDraftCase({ title: "", id: "" });
+    setCreatingFolder(false);
+  };
+
   const saveCaseEdit = () => {
     if (!editingCaseId) return;
     const original = cases.items.find(c => c.id === editingCaseId);
-    if (!original) { cancelEditCase(); return; }
     const nextId = (draftCase.id || "").trim();
     if (!nextId) { toast.error("Application number is required."); return; }
-    const nextTitle = (draftCase.title || "").trim() || original.title || nextId;
+    const nextTitle = (draftCase.title || "").trim() || (original?.title || nextId);
     const duplicate = cases.items.some(c => c.id !== editingCaseId && c.id.toLowerCase() === nextId.toLowerCase());
     if (duplicate) { toast.error("Application number already exists."); return; }
+    if (editingCaseId === "NEW") {
+      const newCase = { id: nextId, title: nextTitle, status: "Open", folderId: selectedFolderId || null };
+      setCases(prev => ({
+        total: prev.total + 1,
+        items: [newCase, ...prev.items.filter(item => item.id !== newCase.id)],
+      }));
+      toast.success("Case created");
+      onCreateCase?.(newCase);
+      setEditingCaseId(null);
+      setDraftCase({ title: "", id: "" });
+      onCloseSidebar?.();
+      return;
+    }
+    if (!original) { cancelEditCase(); return; }
     const updatedCase = { ...original, id: nextId, title: nextTitle };
     setCases(prev => ({
       ...prev,
@@ -369,7 +425,7 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
         <div className="flex items-center gap-2 text-xs text-slate-500">
           <Folder className="h-4 w-4"/> Folders
         </div>
-        <Button size="sm" variant="ghost" onClick={()=>toast.info("Create folder (mock)")}> <FolderPlus className="h-4 w-4 mr-1"/> New</Button>
+        <Button size="sm" variant="ghost" onClick={()=>{ setCreatingFolder(true); setFolderDraft(''); }}><FolderPlus className="h-4 w-4 mr-1"/> New</Button>
       </div>
       <div className="flex items-center justify-between">
         <Button size="icon" variant="ghost" disabled={folderPage<=1} onClick={()=>setFolderPage(p=>p-1)}><ChevronLeft className="h-4 w-4"/></Button>
@@ -377,6 +433,17 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
         <Button size="icon" variant="ghost" disabled={folderPage>=folderPages} onClick={()=>setFolderPage(p=>p+1)}><ChevronRight className="h-4 w-4"/></Button>
       </div>
       <div className="grid grid-cols-2 gap-2">
+        {creatingFolder && (
+          <div className="col-span-2 rounded-xl border border-dashed border-line p-3 bg-white">
+            <div className="space-y-2">
+              <Input value={folderDraft} onChange={e=>setFolderDraft(e.target.value)} placeholder="Folder name" autoFocus />
+              <div className="flex justify-end gap-2 pt-1">
+                <Button size="sm" className="btn-brand" onClick={saveFolder}>Create</Button>
+                <Button size="sm" variant="ghost" onClick={cancelFolder}>Cancel</Button>
+              </div>
+            </div>
+          </div>
+        )}
         {folders.items.map(f => {
           const isActive = selectedFolderId === f.id;
           return (
@@ -401,7 +468,7 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
 
       <div className="flex items-center justify-between">
         <div className="text-xs text-slate-500 flex items-center gap-2"><BookOpen className="h-4 w-4"/> Cases</div>
-        <Button size="sm" className="btn-brand" onClick={()=>{ onCreateCase(); onCloseSidebar?.(); }}><PlusIcon className="h-4 w-4 mr-1"/> New</Button>
+        <Button size="sm" className="btn-brand" onClick={startCreateCase}><PlusIcon className="h-4 w-4 mr-1"/> New</Button>
       </div>
       <div className="flex items-center justify-between mt-1">
         <Button size="icon" variant="ghost" disabled={page<=1} onClick={()=>setPage(p=>p-1)}><ChevronLeft className="h-4 w-4"/></Button>
@@ -411,6 +478,29 @@ const Sidebar = ({ onSelectCase, activeCaseId, onCreateCase, selectedFolderId, o
 
       <ScrollArea className="flex-1 min-h-0">
         <div className="space-y-1 pr-1">
+          {editingCaseId === "NEW" && (
+            <div className="rounded-xl border border-dashed border-line p-3 bg-white">
+              <div className="space-y-2">
+                <Input
+                  value={draftCase.title}
+                  onChange={e=>setDraftCase(prev => ({ ...prev, title: e.target.value }))}
+                  onKeyDown={handleDraftKeyDown}
+                  placeholder="Applicant name"
+                  autoFocus
+                />
+                <Input
+                  value={draftCase.id}
+                  onChange={e=>setDraftCase(prev => ({ ...prev, id: e.target.value }))}
+                  onKeyDown={handleDraftKeyDown}
+                  placeholder="Application #"
+                />
+                <div className="flex justify-end gap-2 pt-1">
+                  <Button size="sm" className="btn-brand" onClick={saveCaseEdit}>Create</Button>
+                  <Button size="sm" variant="ghost" onClick={cancelEditCase}>Cancel</Button>
+                </div>
+              </div>
+            </div>
+          )}
           {cases.items.map(c => {
             const isActive = activeCaseId === c.id;
             const isEditing = editingCaseId === c.id;
@@ -946,6 +1036,9 @@ const Workspace = ({ user, onOpenDev }) => {
   const [docs, setDocs] = useState([]);
   const docsRef = useRef([]);
   const docTimers = useRef(new Map());
+  const pendingExtractionDocsRef = useRef(new Set());
+  const autoExtractingRef = useRef(false);
+  const autoExtractionQueuedRef = useRef(false);
   const releaseDocUrls = useCallback((list) => {
     list.forEach(doc => {
       if (doc?.url) {
@@ -956,6 +1049,9 @@ const Workspace = ({ user, onOpenDev }) => {
   const clearDocs = useCallback(() => {
     docTimers.current.forEach(timer => clearTimeout(timer));
     docTimers.current.clear();
+    pendingExtractionDocsRef.current.clear();
+    autoExtractionQueuedRef.current = false;
+    autoExtractingRef.current = false;
     setDocs(prev => {
       releaseDocUrls(prev);
       return [];
@@ -970,6 +1066,59 @@ const Workspace = ({ user, onOpenDev }) => {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState(null);
 
+  const extractCandidatesForActiveCase = useCallback(async (context = "manual") => {
+    if (!activeCase) return;
+    if (autoExtractingRef.current) {
+      if (context === "auto") {
+        autoExtractionQueuedRef.current = true;
+      }
+      return;
+    }
+    autoExtractingRef.current = true;
+    const introMessage = context === "auto"
+      ? "Processing complete. Extracting phone candidates automatically…"
+      : "Extracting phone candidates from uploaded documents…";
+    setChat(prev => [...prev, { who: "bot", text: introMessage }]);
+    try {
+      const { candidates: found } = await MockAPI.extractCandidates({ caseId: activeCase.id });
+      let newOnes = [];
+      setCandidates(prev => {
+        const seen = new Set(prev.map(p => `${p.number}|${p.via}`));
+        const addition = found.filter(c => {
+          const key = `${c.number}|${c.via}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        newOnes = addition;
+        if (!addition.length) return prev;
+        return [...prev, ...addition];
+      });
+      if (newOnes.length > 0) {
+        setDrawerOpen(true);
+        setChat(prev => [
+          ...prev,
+          {
+            who: "bot",
+            text: context === "auto"
+              ? `Auto-extracted ${newOnes.length} candidate(s). Opened the list.`
+              : `Found ${newOnes.length} candidate(s). Opened the list.`,
+          },
+        ]);
+      } else {
+        setChat(prev => [...prev, { who: "bot", text: "No new candidates found in the latest extraction." }]);
+      }
+    } catch (_) {
+      toast.error("Failed to extract phone candidates.");
+    } finally {
+      autoExtractingRef.current = false;
+      if (autoExtractionQueuedRef.current) {
+        autoExtractionQueuedRef.current = false;
+        setTimeout(() => extractCandidatesForActiveCase("auto"), 0);
+      }
+    }
+  }, [activeCase, setCandidates, setChat, setDrawerOpen]);
+
   const send = async () => {
     if (!input.trim()) return;
     const msg = input.trim();
@@ -983,38 +1132,28 @@ const Workspace = ({ user, onOpenDev }) => {
       setChat(prev => [...prev, { who: "bot", text: `I found ${results.length} public entries. You can add numbers as candidates from the Web tab.` }]);
     } else if (/extract|phone|candidate/i.test(msg)) {
       if (!activeCase) { setChat(prev => [...prev, { who: "bot", text: "Please select or create a case first." }]); return; }
-      setChat(prev => [...prev, { who: "bot", text: "Extracting phone candidates from uploaded documents…" }]);
-      const { candidates: found } = await MockAPI.extractCandidates({ caseId: activeCase.id });
-      setCandidates(prev => [...prev, ...found]);
-      setDrawerOpen(true);
-      setChat(prev => [...prev, { who: "bot", text: `Found ${found.length} candidate(s). Opened the list.` }]);
+      await extractCandidatesForActiveCase("chat");
     } else {
       setChat(prev => [...prev, { who: "bot", text: "Try: ‘extract phone’, or ‘run web lookup’." }]);
     }
   };
 
-  const onFilesUploaded = async (uploaded) => {
+  const onFilesUploaded = (uploaded) => {
     setDocs(prev => [...prev, ...uploaded]);
-    uploaded.forEach(doc => scheduleDocProcessing(doc));
+    uploaded.forEach(doc => {
+      pendingExtractionDocsRef.current.add(doc.id);
+      scheduleDocProcessing(doc, () => {
+        pendingExtractionDocsRef.current.delete(doc.id);
+        if (pendingExtractionDocsRef.current.size === 0 && activeCase) {
+          extractCandidatesForActiveCase("auto");
+        }
+      });
+    });
     if (!activeCase) {
       setChat(prev => [...prev, { who: "bot", text: `Uploaded ${uploaded.length} document(s). Select or create a case to extract phone numbers.` }]);
       return;
     }
-    setChat(prev => [...prev, { who: "bot", text: `Uploaded ${uploaded.length} document(s). Extracting phone candidates…` }]);
-    try {
-      const { candidates: found } = await MockAPI.extractCandidates({ caseId: activeCase.id });
-      setCandidates(prev => {
-        const seen = new Set(prev.map(c => `${c.number}|${c.via}`));
-        const addition = found.filter(c => !seen.has(`${c.number}|${c.via}`));
-        if (!addition.length) return prev;
-        return [...prev, ...addition];
-      });
-      setDrawerOpen(true);
-      setChat(prev => [...prev, { who: "bot", text: `Auto-extracted ${found.length} candidate(s) from the latest upload.` }]);
-    } catch (err) {
-      toast.error("Failed to extract candidates automatically. Try again later.");
-      setChat(prev => [...prev, { who: "bot", text: "Automatic extraction failed. You can retry by typing ‘extract phone’." }]);
-    }
+    setChat(prev => [...prev, { who: "bot", text: `Uploaded ${uploaded.length} document(s). I’ll extract phone candidates once processing completes.` }]);
   };
 
   const onSelectPrimary = (c) => {
@@ -1080,24 +1219,25 @@ const Workspace = ({ user, onOpenDev }) => {
     updateUrlState({ folder: id, case: null });
   };
 
-  const createCase = () => {
-    const title = prompt("Case / Applicant name?") || `New Applicant ${Math.floor(Math.random()*1000)}`;
-    const c = { id: `C-${Math.floor(Math.random()*900000)+100000}`, title, status: "Open", folderId: selectedFolderId || null };
+  const createCase = (draft) => {
+    const folderId = draft.folderId ?? selectedFolderId ?? null;
+    const c = { ...draft, folderId, status: draft.status || "Open" };
     setCaseContext(c);
     toast.success("Case created");
   };
 
-  const scheduleDocProcessing = useCallback((doc) => {
+  const scheduleDocProcessing = useCallback((doc, onComplete) => {
     if (!doc?.id || !doc?.steps) return;
     if (docTimers.current.has(doc.id)) {
       clearTimeout(docTimers.current.get(doc.id));
     }
-    const durations = [800, 900, 1100, 1000, 900];
+    const durations = [2000, 2200, 2500, 2300, 2200];
     const runStep = (index) => {
       const steps = doc.steps || [];
       if (index >= steps.length) {
         setDocs(prev => prev.map(d => d.id === doc.id ? { ...d, status: "completed", currentStep: "Ready for extraction", stepIndex: steps.length } : d));
         docTimers.current.delete(doc.id);
+        onComplete?.();
         return;
       }
       const delay = durations[index] || 1000;
@@ -1171,6 +1311,9 @@ const Workspace = ({ user, onOpenDev }) => {
   useEffect(() => () => {
     docTimers.current.forEach(timer => clearTimeout(timer));
     docTimers.current.clear();
+    pendingExtractionDocsRef.current.clear();
+    autoExtractionQueuedRef.current = false;
+    autoExtractingRef.current = false;
     releaseDocUrls(docsRef.current);
   }, [releaseDocUrls]);
 
@@ -1234,7 +1377,7 @@ const Workspace = ({ user, onOpenDev }) => {
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Button size="sm" variant="outline" className="w-full sm:w-auto" onClick={()=>setDrawerOpen(true)}><Phone className="h-4 w-4 mr-2"/> Candidates</Button>
-            <Button size="sm" className="btn-brand w-full sm:w-auto" onClick={()=>setChat(prev=>[...prev,{ who:"bot", text:"Extracting phone candidates from uploaded documents…" }]) && MockAPI.extractCandidates({caseId:activeCase?.id}).then(({candidates:found})=>{ setCandidates(prev=>[...prev,...found]); setDrawerOpen(true); setChat(prev=>[...prev,{ who:"bot", text:`Found ${found.length} candidate(s). Opened the list.` }]); })}>
+            <Button size="sm" className="btn-brand w-full sm:w-auto" onClick={()=>extractCandidatesForActiveCase("manual")}>
               <Wand2 className="h-4 w-4 mr-2"/> Extract
             </Button>
             <Button size="sm" variant="ghost" className="w-full sm:w-auto" onClick={onOpenDev}>Dev tests</Button>
