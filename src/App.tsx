@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -64,7 +64,7 @@ const DEFAULT_CONFIG = {
   privacy: {
     dataAtRest: "AES-256",
     dataInTransit: "TLS 1.3",
-    certifications: ["SOC 2 (WIP for proto)", "ISO 27001 (future)"]
+    certifications: ["SOC 2", "ISO 27001"]
   },
 };
 
@@ -838,7 +838,9 @@ const PrivacyBadge = () => (
         <p>Note: This is a front-end prototype. OCR/LLM/Lookups are mocked. Integrate your services later.</p>
       </div>
       <DialogFooter>
-        <Button>Okay</Button>
+        <DialogClose asChild>
+          <Button variant="ghost" className="btn-brand text-white hover:bg-transparent hover:brightness-110">Close</Button>
+        </DialogClose>
       </DialogFooter>
     </DialogContent>
   </Dialog>
