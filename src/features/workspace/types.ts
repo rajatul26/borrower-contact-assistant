@@ -56,3 +56,9 @@ export type ChatMessage = {
   text: string;
   actions?: ReactNode;
 };
+
+export type WebLookupStatus =
+  | { state: 'idle' }
+  | { state: 'loading'; message?: string }
+  | { state: 'success'; total: number }
+  | { state: 'error'; message?: string };

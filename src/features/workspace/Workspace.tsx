@@ -16,7 +16,14 @@ import { ChatBubble } from './components/ChatBubble';
 import { EvidenceTabs } from './components/EvidenceTabs';
 import { Sidebar } from './components/Sidebar';
 import { UploadTray } from './components/UploadTray';
-import type { CaseSummary, ChatMessage, FolderSummary, PhoneCandidate, UploadedDocument } from './types';
+import type {
+  CaseSummary,
+  ChatMessage,
+  FolderSummary,
+  PhoneCandidate,
+  UploadedDocument,
+  WebLookupStatus,
+} from './types';
 
 type WorkspaceProps = {
   onOpenDev: () => void;
@@ -48,6 +55,9 @@ export const Workspace: React.FC<WorkspaceProps> = ({ onOpenDev }) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [activeEvidenceTab, setActiveEvidenceTab] = useState<'docs' | 'web'>('docs');
+  const [webLookupStatus, setWebLookupStatus] = useState<WebLookupStatus>({ state: 'idle' });
+  const [webTabPulse, setWebTabPulse] = useState(false);
 
   const releaseDocUrls = useCallback((list: UploadedDocument[]) => {
     list.forEach(doc => {
@@ -72,6 +82,13 @@ export const Workspace: React.FC<WorkspaceProps> = ({ onOpenDev }) => {
       return [];
     });
   }, [releaseDocUrls]);
+
+  const handleEvidenceTabChange = useCallback((value: 'docs' | 'web') => {
+    setActiveEvidenceTab(value);
+    if (value === 'web') {
+      setWebTabPulse(false);
+    }
+  }, []);
 
   const extractCandidatesForActiveCase = useCallback(
     async (context: 'auto' | 'manual' | 'chat') => {
@@ -138,12 +155,43 @@ export const Workspace: React.FC<WorkspaceProps> = ({ onOpenDev }) => {
     setInput('');
     if (/lookup|web|search/i.test(message)) {
       setChat(prev => [...prev, { who: 'bot', text: 'Okay, running a public lookup…' }]);
-      const results = await MockAPI.webLookup({ name: activeCase?.title || 'Borrower', address: 'N/A' });
-      setWebResults(results);
-      setChat(prev => [
-        ...prev,
-        { who: 'bot', text: `I found ${results.length} public entries. You can add numbers as candidates from the Web tab.` },
-      ]);
+      setWebLookupStatus({ state: 'loading', message: 'Browsing public records…' });
+      if (activeEvidenceTab !== 'web') {
+        setWebTabPulse(true);
+      }
+      try {
+        const results = await MockAPI.webLookup({ name: activeCase?.title || 'Borrower', address: 'N/A' });
+        setWebResults(results);
+        setWebLookupStatus({ state: 'success', total: results.length });
+        if (activeEvidenceTab !== 'web') {
+          setWebTabPulse(true);
+        }
+        const openWebAction = (
+          <Button
+            key="open-web-tab"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              handleEvidenceTabChange('web');
+            }}
+          >
+            View web results
+          </Button>
+        );
+        setChat(prev => [
+          ...prev,
+          {
+            who: 'bot',
+            text: results.length === 0
+              ? 'The lookup completed but no public entries were returned.'
+              : `I found ${results.length} public entr${results.length === 1 ? 'y' : 'ies'}. You can add numbers as candidates from the Web tab.`,
+            actions: [openWebAction],
+          },
+        ]);
+      } catch {
+        setWebLookupStatus({ state: 'error', message: 'Public lookup failed. Please try again.' });
+        setChat(prev => [...prev, { who: 'bot', text: 'Public lookup failed. Please try again.' }]);
+      }
     } else if (/extract|phone|candidate/i.test(message)) {
       if (!activeCase) {
         setChat(prev => [...prev, { who: 'bot', text: 'Please select or create a case first.' }]);
@@ -153,7 +201,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({ onOpenDev }) => {
     } else {
       setChat(prev => [...prev, { who: 'bot', text: "Try: 'extract phone', or 'run web lookup'." }]);
     }
-  }, [activeCase, extractCandidatesForActiveCase, input]);
+  }, [activeCase, activeEvidenceTab, extractCandidatesForActiveCase, handleEvidenceTabChange, input]);
 
   const scheduleDocProcessing = useCallback(
     (doc: UploadedDocument, onComplete: () => void) => {
@@ -267,29 +315,35 @@ export const Workspace: React.FC<WorkspaceProps> = ({ onOpenDev }) => {
         preserveData = false,
       }: { syncUrl?: boolean; replaceHistory?: boolean; folderOverride?: string | null; preserveData?: boolean } = {}
     ) => {
-      if (!caseData) {
-        setActiveCase(null);
-        clearDocs();
-        setCandidates([]);
-        setWebResults([]);
-        setChat([{ who: 'bot', text: welcomeMessage }]);
-        setDrawerOpen(false);
-        if (syncUrl) {
-          const folderValue = folderOverride !== undefined ? folderOverride : selectedFolderId;
-          updateUrlState({ folder: folderValue, case: null }, { replace: replaceHistory });
+    if (!caseData) {
+      setActiveCase(null);
+      clearDocs();
+      setCandidates([]);
+      setWebResults([]);
+      setWebLookupStatus({ state: 'idle' });
+      setActiveEvidenceTab('docs');
+      setWebTabPulse(false);
+      setChat([{ who: 'bot', text: welcomeMessage }]);
+      setDrawerOpen(false);
+      if (syncUrl) {
+        const folderValue = folderOverride !== undefined ? folderOverride : selectedFolderId;
+        updateUrlState({ folder: folderValue, case: null }, { replace: replaceHistory });
         }
         return;
       }
       const folderForCase = folderOverride !== undefined ? folderOverride : caseData.folderId || selectedFolderId || null;
       setSelectedFolderId(folderForCase);
       setActiveCase(prev => (preserveData && prev ? { ...prev, ...caseData } : caseData));
-      if (!preserveData) {
-        clearDocs();
-        setCandidates([]);
-        setWebResults([]);
-        setChat([{ who: 'bot', text: `Opened case ${caseData.id}. Upload PDFs to begin.` }]);
-        setDrawerOpen(false);
-      }
+    if (!preserveData) {
+      clearDocs();
+      setCandidates([]);
+      setWebResults([]);
+      setWebLookupStatus({ state: 'idle' });
+      setActiveEvidenceTab('docs');
+      setWebTabPulse(false);
+      setChat([{ who: 'bot', text: `Opened case ${caseData.id}. Upload PDFs to begin.` }]);
+      setDrawerOpen(false);
+    }
       if (!preserveData) {
         setSidebarCollapsed(false);
       }
@@ -548,6 +602,10 @@ export const Workspace: React.FC<WorkspaceProps> = ({ onOpenDev }) => {
                 onAddCandidate={addCandidateFromWeb}
                 onRemoveCandidate={removeCandidateFromWeb}
                 selectedNumbers={webCandidateNumbers}
+                activeTab={activeEvidenceTab}
+                onTabChange={handleEvidenceTabChange}
+                webStatus={webLookupStatus}
+                highlightWeb={webTabPulse}
               />
             </div>
           </div>

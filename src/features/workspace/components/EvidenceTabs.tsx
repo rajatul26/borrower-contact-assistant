@@ -1,13 +1,13 @@
 import { useMemo } from 'react';
 import { toast } from 'sonner';
-import { Download, Eye, FileText } from 'lucide-react';
+import { Download, Eye, FileText, Loader2 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
-import type { PhoneCandidate, UploadedDocument } from '@/features/workspace/types';
+import type { PhoneCandidate, UploadedDocument, WebLookupStatus } from '@/features/workspace/types';
 
 type EvidenceTabsProps = {
   docs: UploadedDocument[];
@@ -15,6 +15,10 @@ type EvidenceTabsProps = {
   onAddCandidate: (candidate: PhoneCandidate) => void;
   onRemoveCandidate?: (number: string) => void;
   selectedNumbers?: string[];
+  activeTab: 'docs' | 'web';
+  onTabChange: (value: 'docs' | 'web') => void;
+  webStatus: WebLookupStatus;
+  highlightWeb?: boolean;
 };
 
 type WebResult = {
@@ -39,7 +43,7 @@ const resolveSourceLabel = (domain: string) => {
   return 'Web';
 };
 
-const getFallbackStatus = (status: UploadedDocument['status']) => STATUS_COLORS[status] ?? STATUS_COLORS.pending;
+const getStatusBadgeClass = (status: UploadedDocument['status']) => STATUS_COLORS[status] ?? STATUS_COLORS.pending;
 
 export const EvidenceTabs: React.FC<EvidenceTabsProps> = ({
   docs,
@@ -47,14 +51,58 @@ export const EvidenceTabs: React.FC<EvidenceTabsProps> = ({
   onAddCandidate,
   onRemoveCandidate = () => {},
   selectedNumbers = [],
+  activeTab,
+  onTabChange,
+  webStatus,
+  highlightWeb = false,
 }) => {
   const webEntries = useMemo(() => web ?? [], [web]);
+  const webCount = webEntries.length;
+  const webEmpty = webCount === 0;
+
+  const renderWebStatus = () => {
+    if (webStatus.state === 'loading') {
+      return (
+        <div className="flex items-center gap-2 text-sm text-slate-600">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>{webStatus.message ?? 'Browsing public records…'}</span>
+        </div>
+      );
+    }
+    if (webStatus.state === 'success') {
+      return (
+        <div className="flex items-center gap-2 text-sm text-emerald-600">
+          <Badge variant="outline" className="font-medium">
+            {webStatus.total}
+          </Badge>
+          <span>{webStatus.total === 1 ? 'Found 1 public entry.' : `Found ${webStatus.total} public entries.`}</span>
+        </div>
+      );
+    }
+    if (webStatus.state === 'error') {
+      return <div className="text-sm text-red-600">{webStatus.message ?? 'Web lookup failed. Try again.'}</div>;
+    }
+    return null;
+  };
 
   return (
-    <Tabs defaultValue="docs" className="w-full">
+    <Tabs value={activeTab} onValueChange={value => onTabChange(value as 'docs' | 'web')} className="w-full">
       <TabsList className="grid grid-cols-2 w-full">
         <TabsTrigger value="docs">Documents</TabsTrigger>
-        <TabsTrigger value="web">Web</TabsTrigger>
+        <TabsTrigger
+          value="web"
+          className={cn(
+            'flex items-center justify-center gap-2 transition',
+            highlightWeb && 'ring-2 ring-offset-2 ring-brand shadow-sm'
+          )}
+        >
+          <span>Web</span>
+          {webCount > 0 && (
+            <Badge variant="outline" className="px-2 py-0.5 text-[11px]">
+              {webCount}
+            </Badge>
+          )}
+        </TabsTrigger>
       </TabsList>
       <TabsContent value="docs" className="space-y-2">
         {docs.length === 0 && <div className="text-sm text-slate-500">No documents uploaded yet.</div>}
@@ -67,7 +115,9 @@ export const EvidenceTabs: React.FC<EvidenceTabsProps> = ({
                 <CardTitle className="text-sm flex items-center gap-2">
                   <FileText className="h-4 w-4" /> {doc.name}
                   {doc.pages > 0 && <Badge variant="secondary">{doc.pages} pages</Badge>}
-                  <span className={cn('text-[11px] px-2 py-1 rounded-full capitalize', getFallbackStatus(doc.status))}>{doc.status}</span>
+                  <span className={cn('text-[11px] px-2 py-1 rounded-full capitalize', getStatusBadgeClass(doc.status))}>
+                    {doc.status}
+                  </span>
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -110,7 +160,14 @@ export const EvidenceTabs: React.FC<EvidenceTabsProps> = ({
         })}
       </TabsContent>
       <TabsContent value="web" className="space-y-2">
-        {webEntries.length === 0 && <div className="text-sm text-slate-500">No lookup yet. Ask bot to run a public lookup.</div>}
+        {renderWebStatus()}
+        {webEmpty && webStatus.state !== 'loading' && (
+          <div className="text-sm text-slate-500">
+            {webStatus.state === 'success'
+              ? 'No public entries were returned for this borrower.'
+              : 'No lookup yet. Ask the bot to run a public lookup.'}
+          </div>
+        )}
         {webEntries.map((entry, index) => {
           const phone = entry.snippet.match(/\(\d{3}\) \d{3}-\d{4}/)?.[0] || '+1 000 000 0000';
           const isAdded = selectedNumbers.includes(phone);
@@ -119,8 +176,7 @@ export const EvidenceTabs: React.FC<EvidenceTabsProps> = ({
             <Card key={`${entry.domain}-${index}`} className="border-line">
               <CardHeader className="py-3">
                 <CardTitle className="text-sm">
-                  {entry.title}{' '}
-                  <span className="text-xs text-slate-500">({entry.domain})</span>
+                  {entry.title} <span className="text-xs text-slate-500">({entry.domain})</span>
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex items-center justify-between gap-2">
